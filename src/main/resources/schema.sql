@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS root_folders (
+    id INTEGER PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS folders (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    parent_path TEXT,
+    depth INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_moves (
+    id INTEGER PRIMARY KEY,
+    from_path TEXT NOT NULL UNIQUE,
+    to_path TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)

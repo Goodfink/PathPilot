@@ -1,0 +1,60 @@
+package org.example.pathpilot.watcher;
+
+import lombok.RequiredArgsConstructor;
+import org.example.pathpilot.service.file.FileService;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
+
+@Component
+@RequiredArgsConstructor
+public class Watcher {
+
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final Logger log = LoggerFactory.getLogger(Watcher.class);
+    public static final String PATH = "/Users/jakefinkelstein/Downloads/";
+    private final FileService fileService;
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void fileWatcherStart() {
+        executor.submit(this::fileWatcher);
+    }
+
+    public void fileWatcher() {
+
+        try {
+            WatchService watchService = FileSystems.getDefault().newWatchService();
+            Path path = Paths.get(PATH);
+            path.register(watchService, ENTRY_CREATE);
+
+            while (!Thread.currentThread().isInterrupted()) {
+                WatchKey key = watchService.take();
+
+                for (WatchEvent<?> event : key.pollEvents()) {
+                    log.info("File downloaded: relativeFilePath={}", event.context());
+                    fileService.receiveFile(event);
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
