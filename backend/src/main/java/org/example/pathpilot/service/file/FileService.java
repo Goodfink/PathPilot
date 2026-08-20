@@ -25,6 +25,7 @@ public class FileService {
     private final PlainTextFileService plainTextFileService;
     private final PendingMovesRepository pendingMovesRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final DOCXFileService docxFileService;
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
@@ -81,23 +82,27 @@ public class FileService {
     private ClassificationResult handleExtensionCase(FileHandleType fileHandleType, FileInfo fileInfo) throws IOException {
         ClassificationResult result =  ClassificationResult.builder().build();
 
-        switch (fileHandleType) {
-            case FileHandleType.DOCX:
-                log.info("Handling DOCX file: {}", fileInfo.getFileName());
-                // read word file
-                break;
-            case FileHandleType.PDF:
-                log.info("Handling PDF file: {}", fileInfo.getFileName());
-                // read pdf
-                break;
-            case FileHandleType.IMAGE:
-                log.info("Handling image file: {}", fileInfo.getFileName());
-                //handle Image
-                break;
-            case FileHandleType.PLAIN_TEXT:
-                log.info("Handling plain text file: {}", fileInfo.getFileName());
-                result = plainTextFileService.handlePlainTextFile(fileInfo);
-                break;
+        try {
+            switch (fileHandleType) {
+                case FileHandleType.DOCX:
+                    log.info("Handling DOCX file: {}", fileInfo.getFileName());
+                    result = docxFileService.handleDOCXFile(fileInfo);
+                    break;
+                case FileHandleType.PDF:
+                    log.info("Handling PDF file: {}", fileInfo.getFileName());
+                    // read pdf
+                    break;
+                case FileHandleType.IMAGE:
+                    log.info("Handling image file: {}", fileInfo.getFileName());
+                    //handle Image
+                    break;
+                case FileHandleType.PLAIN_TEXT:
+                    log.info("Handling plain text file: {}", fileInfo.getFileName());
+                    result = plainTextFileService.handlePlainTextFile(fileInfo);
+                    break;
+            }
+        } catch (RuntimeException e) {
+            log.error("There was an issue processing the file: errorMessage={}", e.getMessage());
         }
 
         log.info("file processing complete: result={}", result);
