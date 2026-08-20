@@ -26,7 +26,7 @@ public class PlainTextFileService {
             String fileContent = Files.readString(fileInfo.getFilePath());
             fileInfo.setFileContent(fileContent);
             log.debug("Calling LLM: filePath={}", fileInfo.getFilePath());
-            ClassificationResult classificationResult = llmService.callClassifier(fileInfo, foldersRepository.getFolders());
+            ClassificationResult classificationResult = llmService.callClassifier(fileInfo);
             return classificationResult;
         } catch (IOException e) {
             log.error(e.getMessage(), e);
