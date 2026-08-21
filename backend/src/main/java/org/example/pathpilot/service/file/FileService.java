@@ -13,6 +13,7 @@ import org.example.pathpilot.model.file.FileHandleType;
 import org.example.pathpilot.model.llm.ClassificationResult;
 import org.example.pathpilot.repository.PendingMovesRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.example.pathpilot.service.file.PDFFileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class FileService {
     private final PlainTextFileService plainTextFileService;
     private final PendingMovesRepository pendingMovesRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PDFFileService pdfFileService;
     private final DOCXFileService docxFileService;
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
@@ -90,7 +92,7 @@ public class FileService {
                     break;
                 case FileHandleType.PDF:
                     log.info("Handling PDF file: {}", fileInfo.getFileName());
-                    // read pdf
+                    result = pdfFileService.handlePDFFile(fileInfo);
                     break;
                 case FileHandleType.IMAGE:
                     log.info("Handling image file: {}", fileInfo.getFileName());
