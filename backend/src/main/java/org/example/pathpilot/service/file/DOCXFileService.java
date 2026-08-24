@@ -18,21 +18,25 @@ public class DOCXFileService {
 
     private final LLMService llmService;
 
-    public ClassificationResult handleDOCXFile(FileInfo fileInfo) {
+    public FileInfo getDOCXFileContent(FileInfo fileInfo) {
+
+        String fileContent;
+
         try (InputStream stream = Files.newInputStream(fileInfo.getFilePath())){
             XWPFDocument document = new XWPFDocument(stream);
 
-            String fileContent = document.getParagraphs()
+             fileContent = document.getParagraphs()
                     .stream()
                     .map(XWPFParagraph::getText)
                     .toString();
 
-            fileInfo.setFileContent(fileContent);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
-        ClassificationResult classificationResult = llmService.callClassifier(fileInfo);
-        return classificationResult;
+        FileInfo fileInfoWithContent = fileInfo;
+        fileInfoWithContent.setFileContent(fileContent);
+
+        return fileInfoWithContent;
     }
 }

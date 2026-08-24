@@ -7,19 +7,33 @@ import java.nio.file.FileVisitor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
+import java.nio.file.WatchEvent;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import lombok.RequiredArgsConstructor;
+import org.example.pathpilot.helpers.EventHelpers;
+import org.example.pathpilot.model.event.PendingMoveCreatedEvent;
+import org.example.pathpilot.repository.PendingMovesRepository;
+import org.example.pathpilot.model.file.FileInfo;
 import org.example.pathpilot.model.folder.FolderInfo;
 import org.example.pathpilot.model.folder.RootFolderInfo;
+import org.example.pathpilot.model.llm.ClassificationResult;
+import org.example.pathpilot.model.pendingMove.OperationType;
+import org.example.pathpilot.model.pendingMove.PendingMove;
 import org.example.pathpilot.repository.RootFoldersRepository;
 import org.example.pathpilot.repository.FoldersRepository;
+import org.example.pathpilot.helpers.FileHelpers;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.example.pathpilot.service.file.FileContentService;
+import org.example.pathpilot.service.llm.LLMService;
+import org.example.pathpilot.helpers.PathHelpers;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +44,8 @@ import org.slf4j.LoggerFactory;
 @RequiredArgsConstructor
 public class FolderService {
 
+    private static final int FOLDER_TOP_K = 3;
+
     // hard coded for now will end up being user input
     private static final List<String> ROOTS = new ArrayList<>(List.of("/Users/jakefinkelstein/Documents"));
     private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(".git", ".idea", ".gradle", "node_modules", "venv", ".venv", "myenv", "site-packages", "__pycache__", "build", "target", "dist", "out", "bin", "Debug", "Release", "class-use", "index-files", "script-dir");
@@ -39,6 +55,13 @@ public class FolderService {
 
     private final RootFoldersRepository rootFoldersRepository;
     private final FoldersRepository foldersRepository;
+    private final LLMService llmService;
+    private final PendingMovesRepository pendingMovesRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final FileContentService fileContentService;
+    private final EventHelpers eventHelpers = new EventHelpers();
+    private final PathHelpers pathHelpers = new PathHelpers();
+    private final FileHelpers fileHelpers = new FileHelpers();
 
     @EventListener(ApplicationReadyEvent.class)
     public void initializeFolderIndex() {
@@ -131,5 +154,69 @@ public class FolderService {
         return folders.stream()
                 .filter(folder -> !existingPaths.contains(folder.getPath()))
                 .toList();
+    }
+
+    public void receiveFolder(WatchEvent<?> event) throws IOException {
+        Path folderPath = eventHelpers.getFilePath(event);
+        log.debug("FolderPath: folderPath={}", folderPath);
+
+        String folderName = pathHelpers.getFolderName(folderPath);
+        log.debug("Walking");
+
+        List<Path> files;
+        log.debug("Walking");
+        try (Stream<Path> paths = Files.walk(folderPath)){
+            files = paths.filter(Files::isRegularFile).toList();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        log.info("Fetched folder files: numPaths={}", files.size());
+        List<FileInfo> fileInfoList = new ArrayList<>();
+        for (int i = 0; i < FOLDER_TOP_K && i < files.size(); i++) {
+            Path path = files.get(i);
+            FileInfo fileInfo = FileInfo.builder()
+                    .filePath(path)
+                    .fileExtension(pathHelpers.getFileExtension(path))
+                    .fileName(pathHelpers.getFileName(path))
+                    .fileHandleType(fileHelpers.getFileHandleType(pathHelpers.getFileExtension(path)))
+                    .build();
+            FileInfo fileInfoWithContent = fileContentService.handleExtensionCase(fileInfo);
+            log.debug("File name: fileName={}", fileInfoWithContent.getFileName());
+            fileInfoList.add(fileInfoWithContent);
+        }
+
+        log.info("Made file list top_k: fileSize={}", fileInfoList.size());
+        ClassificationResult result = llmService.callFolderClassifier(fileInfoList, folderName);
+
+        PendingMove pendingMove = PendingMove.builder()
+                .fromPath(folderPath)
+                .toPath(result.getPath())
+                .fileName(folderName)
+                .confidence(result.getConfidence())
+                .build();
+
+        boolean folderExistsAtDestination = fileHelpers.fileExists(pendingMove.getToPath().resolve(pendingMove.getFromPath().getFileName()));
+
+        if (folderExistsAtDestination) {
+            log.info("Folder already exists at destination: fileName={}", folderName);
+            pendingMove.setToPath(null);
+            pendingMove.setOperationType(OperationType.TRASH);
+        } else if (result.getPath() == null) {
+            log.info("No suitable destination folder found: fileName={}", folderName);
+            pendingMove.setToPath(null);
+            pendingMove.setOperationType(OperationType.TRASH);
+        }  else {
+            pendingMove.setOperationType(OperationType.MOVE);
+        }
+
+        int id = pendingMovesRepository.insertPendingMove(pendingMove);
+        log.info("Pending Move added to DB: pendingMove={}", pendingMove);
+
+        eventPublisher.publishEvent(
+                PendingMoveCreatedEvent.builder()
+                        .id(id)
+                        .pendingMove(pendingMove)
+                        .build());
     }
 }

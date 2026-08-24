@@ -4,16 +4,16 @@ import java.io.IOException;
 import java.nio.file.WatchEvent;
 
 import lombok.RequiredArgsConstructor;
-import org.example.pathpilot.helpers.FileHelpers;
+import org.example.pathpilot.helpers.EventHelpers;
 import org.example.pathpilot.model.pendingMove.OperationType;
 import org.example.pathpilot.model.pendingMove.PendingMove;
 import org.example.pathpilot.model.event.PendingMoveCreatedEvent;
 import org.example.pathpilot.model.file.FileInfo;
-import org.example.pathpilot.model.file.FileHandleType;
 import org.example.pathpilot.model.llm.ClassificationResult;
 import org.example.pathpilot.repository.PendingMovesRepository;
 import org.springframework.context.ApplicationEventPublisher;
-import org.example.pathpilot.service.file.PDFFileService;
+import org.example.pathpilot.service.llm.LLMService;
+import org.example.pathpilot.helpers.FileHelpers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,19 +23,19 @@ import org.springframework.stereotype.Service;
 public class FileService {
 
     private final FileHelpers fileHelpers = new FileHelpers();
-    private final PlainTextFileService plainTextFileService;
+    private final EventHelpers eventHelpers = new EventHelpers();
     private final PendingMovesRepository pendingMovesRepository;
     private final ApplicationEventPublisher eventPublisher;
-    private final PDFFileService pdfFileService;
-    private final DOCXFileService docxFileService;
+    private final FileContentService fileContentService;
+    private final LLMService llmService;
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
     public void receiveFile(WatchEvent<?> event) throws IOException {
         FileInfo fileInfo = FileInfo.builder()
-                .filePath(fileHelpers.getFilePath(event))
-                .fileExtension(fileHelpers.getFileExtension(event))
-                .fileName(fileHelpers.getFileName(event))
+                .filePath(eventHelpers.getFilePath(event))
+                .fileExtension(eventHelpers.getFileExtension(event))
+                .fileName(eventHelpers.getFileName(event))
                 .build();
         fileInfo.setFileHandleType(fileHelpers.getFileHandleType(fileInfo.getFileExtension()));
 
@@ -46,7 +46,8 @@ public class FileService {
                 fileInfo.getFileHandleType());
 
         try {
-            ClassificationResult result = handleExtensionCase(fileInfo.getFileHandleType(), fileInfo);
+            FileInfo fileInfoWithContent = fileContentService.handleExtensionCase(fileInfo);
+            ClassificationResult result = llmService.callFileClassifier(fileInfoWithContent);
 
             PendingMove pendingMove = PendingMove.builder()
                     .fromPath(fileInfo.getFilePath())
@@ -59,6 +60,10 @@ public class FileService {
 
             if (fileExistsAtDestination) {
                 log.info("File already exists at destination: fileName={}", fileInfo.getFileName());
+                pendingMove.setToPath(null);
+                pendingMove.setOperationType(OperationType.TRASH);
+            } else if (result.getPath() == null) {
+                log.info("No suitable destination folder found: fileName={}", fileInfo.getFileName());
                 pendingMove.setToPath(null);
                 pendingMove.setOperationType(OperationType.TRASH);
             } else {
@@ -81,33 +86,5 @@ public class FileService {
         }
     }
 
-    private ClassificationResult handleExtensionCase(FileHandleType fileHandleType, FileInfo fileInfo) throws IOException {
-        ClassificationResult result =  ClassificationResult.builder().build();
 
-        try {
-            switch (fileHandleType) {
-                case FileHandleType.DOCX:
-                    log.info("Handling DOCX file: {}", fileInfo.getFileName());
-                    result = docxFileService.handleDOCXFile(fileInfo);
-                    break;
-                case FileHandleType.PDF:
-                    log.info("Handling PDF file: {}", fileInfo.getFileName());
-                    result = pdfFileService.handlePDFFile(fileInfo);
-                    break;
-                case FileHandleType.IMAGE:
-                    log.info("Handling image file: {}", fileInfo.getFileName());
-                    //handle Image
-                    break;
-                case FileHandleType.PLAIN_TEXT:
-                    log.info("Handling plain text file: {}", fileInfo.getFileName());
-                    result = plainTextFileService.handlePlainTextFile(fileInfo);
-                    break;
-            }
-        } catch (RuntimeException e) {
-            log.error("There was an issue processing the file: errorMessage={}", e.getMessage());
-        }
-
-        log.info("file processing complete: result={}", result);
-        return result;
-    }
 }

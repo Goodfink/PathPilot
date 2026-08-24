@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.WatchEvent;
@@ -15,11 +16,13 @@ import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.example.pathpilot.service.folder.FolderService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
+import org.example.pathpilot.helpers.EventHelpers;
 
 @Component
 @RequiredArgsConstructor
@@ -30,6 +33,8 @@ public class Watcher {
     private static final Logger log = LoggerFactory.getLogger(Watcher.class);
     public static final String PATH = "/Users/jakefinkelstein/Downloads/";
     private final FileService fileService;
+    private final FolderService folderService;
+    private final EventHelpers eventHelpers = new EventHelpers();
 
     @EventListener(ApplicationReadyEvent.class)
     public void fileWatcherStart() {
@@ -50,7 +55,13 @@ public class Watcher {
                     log.info("File downloaded: relativeFilePath={}", event.context());
                     fileExecutor.submit(() -> {
                         try {
-                            fileService.receiveFile(event);
+                            if (Files.isDirectory(eventHelpers.getFilePath(event))) {
+                                log.info("Received folder input");
+                                folderService.receiveFolder(event);
+                            } else {
+                                log.info("Received file input");
+                                fileService.receiveFile(event);
+                            }
                         } catch (IOException e) {
                             log.error("Error processing file: file = {}", event.context(), e);
                         }
