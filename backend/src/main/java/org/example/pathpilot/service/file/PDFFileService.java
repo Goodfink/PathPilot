@@ -18,15 +18,17 @@ public class PDFFileService {
     PDFTextStripper stripper = new PDFTextStripper();
     private final LLMService llmService;
 
-    public ClassificationResult handlePDFFile(FileInfo fileInfo) {
+    public FileInfo getPDFFileContent(FileInfo fileInfo) {
+        String text;
         try (PDDocument doc = Loader.loadPDF(fileInfo.getFilePath().toFile())) {
-            String text = stripper.getText(doc);
-            fileInfo.setFileContent(text);
+            text = stripper.getText(doc);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
-        ClassificationResult classificationResult = llmService.callClassifier(fileInfo);
-        return classificationResult;
+        FileInfo fileInfoWithContent = fileInfo;
+        fileInfoWithContent.setFileContent(text);
+
+        return fileInfoWithContent;
     }
 }
