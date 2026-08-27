@@ -12,6 +12,7 @@ import org.example.pathpilot.model.file.FileInfo;
 import org.example.pathpilot.model.llm.ClassificationResult;
 import org.example.pathpilot.repository.PendingMovesRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.example.pathpilot.service.duplicate.DuplicateService;
 import org.example.pathpilot.service.llm.LLMService;
 import org.example.pathpilot.helpers.FileHelpers;
 import org.slf4j.Logger;
@@ -28,6 +29,7 @@ public class FileService {
     private final ApplicationEventPublisher eventPublisher;
     private final FileContentService fileContentService;
     private final LLMService llmService;
+    private final DuplicateService duplicateService;
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
 
@@ -48,27 +50,15 @@ public class FileService {
         try {
             FileInfo fileInfoWithContent = fileContentService.handleExtensionCase(fileInfo);
             ClassificationResult result = llmService.callFileClassifier(fileInfoWithContent);
+            OperationType operationType = duplicateService.checkAndHandleDuplicate(result.getPath(), fileInfo.getFilePath());
 
             PendingMove pendingMove = PendingMove.builder()
                     .fromPath(fileInfo.getFilePath())
-                    .toPath(result.getPath())
+                    .toPath(operationType == OperationType.MOVE ? result.getPath() : null)
                     .fileName(fileInfo.getFileName())
                     .confidence(result.getConfidence())
+                    .operationType(operationType)
                     .build();
-
-            boolean fileExistsAtDestination = fileHelpers.fileExists(pendingMove.getToPath().resolve(pendingMove.getFromPath().getFileName()));
-
-            if (fileExistsAtDestination) {
-                log.info("File already exists at destination: fileName={}", fileInfo.getFileName());
-                pendingMove.setToPath(null);
-                pendingMove.setOperationType(OperationType.TRASH);
-            } else if (result.getPath() == null) {
-                log.info("No suitable destination folder found: fileName={}", fileInfo.getFileName());
-                pendingMove.setToPath(null);
-                pendingMove.setOperationType(OperationType.TRASH);
-            } else {
-                pendingMove.setOperationType(OperationType.MOVE);
-            }
 
             int id = pendingMovesRepository.insertPendingMove(pendingMove);
 
@@ -85,6 +75,4 @@ public class FileService {
             throw e;
         }
     }
-
-
 }

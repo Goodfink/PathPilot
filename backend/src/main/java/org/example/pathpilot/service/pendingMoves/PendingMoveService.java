@@ -56,6 +56,8 @@ public class PendingMoveService {
             case OperationType.TRASH:
                 trashFile(pendingMove);
                 break;
+            case OperationType.NO_MOVE:
+                return;
         }
 
         log.info("Moved file: id={}, fromPath={}, toPath={}", id, pendingMove.getFromPath(), pendingMove.getToPath());

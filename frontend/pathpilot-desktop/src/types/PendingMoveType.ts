@@ -4,5 +4,5 @@ export type PendingMoveType = {
     toPath: string | null;
     fileName: string;
     confidence: number;
-    operationType: "MOVE" | "TRASH";
+    operationType: "MOVE" | "TRASH" | "NO_MOVE";
 };

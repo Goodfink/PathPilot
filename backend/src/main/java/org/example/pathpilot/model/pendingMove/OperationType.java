@@ -2,5 +2,6 @@ package org.example.pathpilot.model.pendingMove;
 
 public enum OperationType {
     MOVE,
-    TRASH
+    TRASH,
+    NO_MOVE
 }
