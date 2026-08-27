@@ -30,6 +30,7 @@ import org.example.pathpilot.repository.RootFoldersRepository;
 import org.example.pathpilot.repository.FoldersRepository;
 import org.example.pathpilot.helpers.FileHelpers;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.example.pathpilot.service.duplicate.DuplicateService;
 import org.example.pathpilot.service.file.FileContentService;
 import org.example.pathpilot.service.llm.LLMService;
 import org.example.pathpilot.helpers.PathHelpers;
@@ -59,6 +60,7 @@ public class FolderService {
     private final PendingMovesRepository pendingMovesRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final FileContentService fileContentService;
+    private final DuplicateService duplicateService;
     private final EventHelpers eventHelpers = new EventHelpers();
     private final PathHelpers pathHelpers = new PathHelpers();
     private final FileHelpers fileHelpers = new FileHelpers();
@@ -188,27 +190,15 @@ public class FolderService {
 
         log.info("Made file list top_k: fileSize={}", fileInfoList.size());
         ClassificationResult result = llmService.callFolderClassifier(fileInfoList, folderName);
+        OperationType operationType = duplicateService.checkAndHandleDuplicate(result.getPath(), folderPath);
 
         PendingMove pendingMove = PendingMove.builder()
                 .fromPath(folderPath)
-                .toPath(result.getPath())
+                .toPath(operationType == OperationType.MOVE ? result.getPath() : null)
                 .fileName(folderName)
                 .confidence(result.getConfidence())
+                .operationType(operationType)
                 .build();
-
-        boolean folderExistsAtDestination = fileHelpers.fileExists(pendingMove.getToPath().resolve(pendingMove.getFromPath().getFileName()));
-
-        if (folderExistsAtDestination) {
-            log.info("Folder already exists at destination: fileName={}", folderName);
-            pendingMove.setToPath(null);
-            pendingMove.setOperationType(OperationType.TRASH);
-        } else if (result.getPath() == null) {
-            log.info("No suitable destination folder found: fileName={}", folderName);
-            pendingMove.setToPath(null);
-            pendingMove.setOperationType(OperationType.TRASH);
-        }  else {
-            pendingMove.setOperationType(OperationType.MOVE);
-        }
 
         int id = pendingMovesRepository.insertPendingMove(pendingMove);
         log.info("Pending Move added to DB: pendingMove={}", pendingMove);
