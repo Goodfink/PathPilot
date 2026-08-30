@@ -13,7 +13,7 @@ public class FileHelpers {
     );
 
     private static final Set<String> IMAGE_EXTENSIONS = Set.of(
-            "png", "jpg", "jpeg", "webp", "heic"
+            "png", "jpg", "jpeg", "webp"
     );
 
     public FileHandleType getFileHandleType(String fileExtension) {
