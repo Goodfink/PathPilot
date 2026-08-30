@@ -3,6 +3,7 @@ package org.example.pathpilot.service.file;
 import lombok.RequiredArgsConstructor;
 import org.example.pathpilot.model.file.FileHandleType;
 import org.example.pathpilot.model.file.FileInfo;
+import org.example.pathpilot.service.image.ImageFileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ public class FileContentService {
     private final DOCXFileService docxFileService;
     private final PDFFileService pdfFileService;
     private final PlainTextFileService plainTextFileService;
+    private final ImageFileService imageFileService;
 
     private static final Logger log = LoggerFactory.getLogger(FileContentService.class);
 
@@ -33,7 +35,7 @@ public class FileContentService {
                     break;
                 case FileHandleType.IMAGE:
                     log.info("Handling image file: {}", fileInfo.getFileName());
-                    //handle Image
+                    result = imageFileService.getImageContent(fileInfo);
                     break;
                 case FileHandleType.PLAIN_TEXT:
                     log.info("Handling plain text file: {}", fileInfo.getFileName());

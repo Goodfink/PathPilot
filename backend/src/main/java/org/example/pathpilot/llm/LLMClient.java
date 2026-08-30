@@ -6,10 +6,16 @@ import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.StructuredResponseCreateParams;
 import lombok.RequiredArgsConstructor;
+import org.example.pathpilot.model.file.FileHandleType;
 import org.example.pathpilot.model.file.FileInfo;
 import org.example.pathpilot.model.folder.FolderInfo;
 import org.example.pathpilot.model.llm.ClassificationResult;
 import org.example.pathpilot.repository.FoldersRepository;
+import com.openai.models.responses.EasyInputMessage;
+import com.openai.models.responses.ResponseInputContent;
+import com.openai.models.responses.ResponseInputImage;
+import com.openai.models.responses.ResponseInputItem;
+import com.openai.models.responses.ResponseInputText;
 import org.example.pathpilot.model.llm.LLMResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +59,53 @@ public class LLMClient {
         }
     }
 
+    public LLMResponse requestImageClassification(String prompt, String imageUrl) {
+
+        ResponseInputContent textContent =
+                ResponseInputContent.ofInputText(
+                        ResponseInputText.builder()
+                                .text(prompt)
+                                .build()
+                );
+
+        ResponseInputContent imageContent =
+                ResponseInputContent.ofInputImage(
+                        ResponseInputImage.builder()
+                                .imageUrl(imageUrl)
+                                .detail(ResponseInputImage.Detail.AUTO)
+                                .build()
+                );
+
+        ResponseInputItem message =
+                ResponseInputItem.ofEasyInputMessage(
+                        EasyInputMessage.builder()
+                                .role(EasyInputMessage.Role.USER)
+                                .content(
+                                        EasyInputMessage.Content
+                                                .ofResponseInputMessageContentList(
+                                                        List.of(textContent, imageContent)
+                                                )
+                                )
+                                .build()
+                );
+
+        StructuredResponseCreateParams<LLMResponse> params =
+                ResponseCreateParams.builder()
+                        .model(MODEL)
+                        .inputOfResponse(List.of(message))
+                        .text(LLMResponse.class)
+                        .build();
+
+        var response = client.responses().create(params);
+
+        return response.output().stream()
+                .flatMap(item -> item.message().stream())
+                .flatMap(msg -> msg.content().stream())
+                .flatMap(content -> content.outputText().stream())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No LLM response returned"));
+    }
+
     public ClassificationResult prepareFolderAndFindDestinationFolder(List<FileInfo> fileInfoList, String folderName) {
         List<FolderInfo> availableFolders = foldersRepository.getFolders();
         String availableFoldersString = getAvailableFoldersString(availableFolders);
@@ -67,6 +120,14 @@ public class LLMClient {
         String availableFoldersString = getAvailableFoldersString(availableFolders);
         String prompt = buildFilePrompt(fileInfo, availableFoldersString);
         LLMResponse llmResponse = requestClassification(prompt);
+        return processLLMResponse(llmResponse, availableFolders);
+    }
+
+    public ClassificationResult prepareImageAndFindDestinationFolder(FileInfo fileInfo) {
+        List<FolderInfo> availableFolders = foldersRepository.getFolders();
+        String availableFoldersString = getAvailableFoldersString(availableFolders);
+        String prompt = buildImagePrompt(fileInfo, availableFoldersString);
+        LLMResponse llmResponse = requestImageClassification(prompt, fileInfo.getFileContent());
         return processLLMResponse(llmResponse, availableFolders);
     }
 
@@ -129,7 +190,7 @@ public class LLMClient {
 
                     File Content:
                       %s
-                    """.formatted(file.getFileName(), file.getFileContent()))
+                    """.formatted(file.getFileName(), getFolderFileContent(file)))
                 .collect(Collectors.joining("\n---\n"));
 
         return """
@@ -154,4 +215,38 @@ public class LLMClient {
             """.formatted(folderName, fileSummaries, folderList);
     }
 
+    private String buildImagePrompt(FileInfo fileInfo, String folderList) {
+        return """
+            Analyze the provided image and determine the most appropriate destination folder.
+
+            File name: %s
+            File extension: %s
+
+            Available folders:
+            %s
+
+            Available folders are listed as folderId | path.
+
+            Set folderId to the selected folder's id.
+
+            If you do not believe the image makes sense to put in any folders, return folderId set to -1.
+
+            confidence must be between 0.0 and 1.0.
+
+            Base the decision primarily on the actual image contents, using the filename only as supporting context.
+
+            """.formatted(
+                fileInfo.getFileName(),
+                fileInfo.getFileExtension(),
+                folderList
+        );
+    }
+
+    private String getFolderFileContent(FileInfo fileInfo) {
+        if (fileInfo.getFileHandleType() == FileHandleType.IMAGE) {
+            return "Image file content omitted from folder-level text classification.";
+        }
+
+        return fileInfo.getFileContent();
+    }
 }
